@@ -1,0 +1,13 @@
+__pycache__/
+corpus/
+dataset/
+output/
+report/
+result_*/
+関連研究/
+corpus_synopsis.txt
+create_main_texts.ipynb
+*.csv
+spm_*.model
+spm_*.vocab
+test.py
