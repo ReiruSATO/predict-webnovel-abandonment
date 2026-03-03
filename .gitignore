@@ -11,3 +11,5 @@ create_main_texts.ipynb
 spm_*.model
 spm_*.vocab
 test.py
+train_by*.ipynb
+train_tfidf_3class.ipynb
