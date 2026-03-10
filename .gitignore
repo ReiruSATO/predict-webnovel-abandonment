@@ -14,3 +14,4 @@ setup*ipynb
 test.py
 train_by*.ipynb
 train_tfidf_3class.ipynb
+worker_script.py
