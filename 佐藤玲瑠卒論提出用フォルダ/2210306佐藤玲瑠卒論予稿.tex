@@ -1,0 +1,199 @@
+\documentclass[twocolumn,10pt,a4paper]{jsarticle}
+\usepackage[dvipdfmx]{graphicx}
+\usepackage{url}
+\usepackage{here}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{subcaption}
+
+\usepackage[top=20truemm,bottom=20truemm,left=15truemm,right=15truemm]{geometry}
+
+\makeatletter
+\def\@maketitle{
+  \newpage
+  \null
+  \noindent
+  {\small 2025年度 卒業論文発表 \hfill 学籍番号 2210306}\par
+  \vspace{5mm}
+  \begin{center}
+    {\LARGE \@title \par}
+    \vspace{1em}
+    {\large \@author \par}
+    \vspace{0.5em}
+    {\large 指導教員：久野 雅樹 教授 \par}
+  \end{center}
+  \par\vspace{1.5em}
+}
+\makeatother
+
+\title{ウェブ小説のメタデータに基づく連載放棄（エタり）の予測}
+\author{I 類 メディア情報学プログラム 学籍番号 2210306 佐藤 玲瑠}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{はじめに}
+近年，『小説家になろう』\footnote{\url{https://syosetu.com/}}をはじめとするUGCプラットフォームの拡大に伴い，ウェブ小説は重要なエンターテインメントとなっている．しかし，参入障壁の低さゆえに，完結することなく長期にわたり更新が停止してしまう「エタり（連載放棄）」が常態化しており，読者の徒労感や執筆者のモチベーション低下を招いている．現在，主な指標であるランキング等は「現時点の人気」を示すものであり，「将来的に完結するか」を保証しないため，連載放棄リスクを予測する新たな指標が求められている．
+
+ウェブ小説の分析として，清水ら\cite{shimizu}は読者行動から将来のヒット作を予測する手法を，堺ら\cite{sakai}はあらすじから流行語変遷を抽出する手法を提案した．しかし，これらは「商業的ヒット」や「マクロな傾向」に主眼を置いており，個々の作品が連載放棄に至るリスクについては議論されていない．また，あらすじに「完結」とあっても「第一部完結」等で未完であるケースも多く，単純な語句検索では判別が困難である．
+
+そこで本研究では，連載放棄の予測モデル構築およびリスク要因の解明を目的とする．先行して行った数値データに基づく分析に加え，本稿ではBERT等の深層学習モデルを用いてあらすじの文脈情報を学習させ，エタり判定を行う．さらに，LIMEを用いてモデルの判断根拠を可視化することで，どのような表現や内容が更新停止に繋がりやすいかを明らかにし，読者の作品選択および執筆者の活動継続を支援する知見を得ることを目指す．
+
+\section{分析対象データ}
+
+本研究では，ヒナプロジェクト社が運営する小説投稿サイト「小説家になろう」の作品データを分析対象とする．
+同サイトは2026年1月時点で約140万作品が公開されている巨大なプラットフォームである．
+
+\subsection{データ収集と定義}
+なろう小説APIを利用し，2025年10月時点での全作品データを収集した．
+収集データに対し，本研究の目的変数である「エタり（長期更新停止）」を以下の通り定義した．
+\begin{itemize}
+  \item \textbf{エタり}: 作品設定が「未完結」かつ最終更新日から1年以上経過している作品．
+  \item \textbf{非エタり（完結）}: 作品設定が「完結済み」である作品．
+\end{itemize}
+なお，現在連載中の作品（最終更新から1年未満）や短編作品は予測対象から除外した．
+最終的なデータセットは537,829件であり，各レコードはタイトル，あらすじ等のテキスト情報と，ブックマーク数，投稿日時等のメタデータ（表\ref{tab:dataset_columns}参照）を有する．
+
+\begin{table}[H]
+  \centering
+  \caption{使用する主な特徴量}
+  \label{tab:dataset_columns}
+  \small
+  \begin{tabular}{l|l} \hline
+    分類 & 項目名 \\ \hline
+    テキスト & あらすじ, キーワード \\
+    日時情報 & 初回投稿日, 最終更新日 \\
+    量的情報 & 投稿話数, 文字数, 読了時間 \\
+    反応数 & ブックマーク数, 感想数, 評価pt \\
+    目的変数 & is\_eternal (0 or 1) \\ \hline
+  \end{tabular}
+\end{table}
+
+\section{分析手法}
+本研究では，メタデータを用いた数値分析と，あらすじを用いたテキスト分析の2つのアプローチにより連載放棄リスクを検証する．
+
+\subsection{分析1：数値データに基づく予測}
+基本メタデータ（表\ref{tab:dataset_columns}）に加え，執筆スタイルを表す「更新頻度」や「経過日数」を特徴量とし，勾配ブースティング決定木であるLightGBMおよびXGBoostを用いて予測を行う．
+比較としてロジスティック回帰等のベースラインモデルも検証し，クラス不均衡を解消するためアンダーサンプリングと5分割交差検証を適用して評価した．
+
+\subsection{分析2：あらすじテキストに基づく予測と解釈}
+あらすじの分析には，MeCabとロジスティック回帰を用いたベースラインのTF-IDF，サブワード分割と双方向LSTMにより系列情報を学習するBi-LSTM，および東北大学の学習済みモデルをファインチューニングし高度な文脈理解を行うBERTの3手法を比較した．
+さらに，LIMEを用いて判断根拠となる単語を可視化し，エタり要因の考察を行う．
+
+\section{実験結果と考察}
+
+\subsection{予測精度の比較と要因分析}
+データ分析の結果（表\ref{tab:genre_extremes}），「童話」のエタり率(62\%)に対し「アクション」は低率(20\%)であり，ジャンルによる執筆継続難易度の差が確認された．
+
+予測実験の結果を表\ref{tab:results_combined}に示す．数値データではXGBoost等の決定木系モデルが高いF1値(約0.78)を示し，線形モデルを凌駕した．特徴量重要度（図\ref{fig:feature_importance}）では「更新頻度」が最上位となり，定期的な執筆習慣の重要性が定量的に裏付けられた．
+テキストデータでは，BERTがF1値 0.74を記録し，TF-IDF(0.69)を上回る性能を示した．単語の出現頻度だけでなく，文脈を捉える深層学習の有効性が確認された．
+
+\begin{table}[H]
+  \centering
+  \vspace{-3mm}
+  \caption{エタり率の上位・下位ジャンル}
+  \label{tab:genre_extremes}
+  \small
+  \begin{tabular}{lrr} \hline
+   ジャンル & 作品数 & エタり率 (\%) \\ \hline
+   童話 & 3,098 & 61.9 \\
+   推理 & 7,464 & 52.6 \\
+   ホラー & 8,954 & 51.6 \\
+   純文学 & 7,050 & 41.6 \\ \hline
+   ハイファンタジー & 122,213 & 21.3 \\
+   アクション & 16,461 & 19.8 \\
+   VRゲーム & 6,277 & 19.4 \\
+   ノンジャンル & 121,298 & 16.6 \\ \hline
+  \end{tabular}
+  \vspace{-5mm}
+ \end{table}
+
+\begin{table}[H]
+ \centering
+ \caption{数値モデル(左)とテキストモデル(右)の性能比較}
+ \label{tab:results_combined}
+ \small
+ \begin{minipage}[t]{0.48\linewidth}
+  \centering
+  \scalebox{0.9}{
+  \begin{tabular}{lrr} \hline
+   Model & Acc & F1 \\ \hline
+   \textbf{XGBoost} & \textbf{0.78} & \textbf{0.78} \\
+   LightGBM & 0.78 & 0.78 \\
+   LogisticReg & 0.66 & 0.70 \\ \hline
+  \end{tabular}
+  }
+ \end{minipage}
+ \hfill
+ \begin{minipage}[t]{0.48\linewidth}
+  \centering
+  \scalebox{0.9}{
+  \begin{tabular}{lrr} \hline
+   Model & Acc & F1 \\ \hline
+   TF-IDF & 0.69 & 0.69 \\
+   Bi-LSTM & 0.70 & 0.71 \\
+   \textbf{BERT} & \textbf{0.72} & \textbf{0.74} \\ \hline
+  \end{tabular}
+  }
+ \end{minipage}
+\end{table}
+
+\begin{figure}[H]
+ \centering
+ \includegraphics[width=0.8\linewidth]{images/train_all-LightGBM-importance.png}
+ \vspace{-3mm}
+ \caption{LightGBMにおける特徴量重要度}
+ \label{fig:feature_importance}
+\end{figure}
+
+\subsection{LIMEによる判断根拠の解釈}
+LIMEによる可視化結果を図\ref{fig:lime_combined}に示す．
+TF-IDF（上図(a)）は，「カクヨム」「転載」等の外部要因や，「完結」という単語（「第一部完結」等の実質エタりを示唆）に反応しており，メタ情報への依存が見られた．
+対してBERT（下図(b)）は，「ます・です」といった丁寧語（敬体）が完結判定に強く寄与していた．これは，文体から作者の誠実さや管理能力といった潜在的特徴を学習している可能性を示唆しており，これが性能が高い要因であると推察される．
+
+\begin{figure}[H]
+ \centering
+ \vspace{-5mm}
+ \begin{minipage}[b]{0.95\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{images/lime/all-tfidf.png}\\
+  (a) TF-IDF（メタ情報）
+ \end{minipage}
+ 
+ \vspace{5mm}
+
+ \begin{minipage}[b]{0.95\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{images/lime/all-bert.png}\\
+  (b) BERT（文体・丁寧語）
+ \end{minipage}
+ 
+ \caption{LIMEによる判断根拠の比較}
+ \label{fig:lime_combined}
+\end{figure}
+
+\vspace{-1cm}
+
+\section{結論}
+
+本研究では，メタデータにおける数値情報とあらすじ情報の双方からウェブ小説の「エタり」予測モデルを構築し，その要因を分析した．
+実験の結果，更新頻度などの執筆習慣を捉えた数値モデルが最も高い予測性能を示し，作品内容以上に「環境・習慣」が執筆継続の主要因であることが明らかとなった．
+また，テキスト分析においても，BERTの導入により文脈やニュアンスを考慮することで，従来手法を上回る精度での予測に成功した．
+
+さらに，LIMEを用いた解析は，「完結設定の失念」や「マルチポストの負担」といった定量評価だけでは見えない執筆実態を可視化し，予測モデルが内包する判断根拠の妥当性を裏付けた．
+今後は，本手法を応用したリアルタイムなリスク提示や，生成AIを用いて続きの展開を提案する能動的な執筆支援システムの開発を目指す．
+
+
+% 予稿用の参考文献リスト
+\begin{thebibliography}{9}
+
+  \bibitem{shimizu}
+  清水一憲, 伊東栄典, 廣川佐千男: ``集合知に基づくオンライン小説のランキング手法の提案と評価,'' 情報処理学会研究報告, Vol.2013-DBS-157, No.8, pp.1--8, 2013.
+
+  \bibitem{sakai}
+  堺雄之介, 伊東栄典: ``オンライン小説の流行語抽出,'' 情報処理学会第82回全国大会講演論文集, 2020.
+
+\end{thebibliography}
+
+\end{document}

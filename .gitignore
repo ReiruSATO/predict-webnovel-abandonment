@@ -10,6 +10,7 @@ create_main_texts.ipynb
 *.csv
 spm_*.model
 spm_*.vocab
+setup*.ipynb
 test.py
 train_by*.ipynb
 train_tfidf_3class.ipynb
